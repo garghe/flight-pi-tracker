@@ -111,9 +111,47 @@ All settings live in `config.yaml`:
 | `display.brightness` | `60` | Brightness 0–100 |
 | `display.gpio_slowdown` | `2` | GPIO timing (1–4; increase on Pi 4 if glitchy) |
 
-## Extending the app
+## Flight data providers
 
-### Adding a new flight data provider
+### OpenSky Network (default)
+
+[OpenSky Network](https://opensky-network.org) is a community-driven ADS-B network and the default provider. It is free to use but has some known limitations:
+
+| Limitation | Detail |
+|---|---|
+| **Destination often missing** | `estArrivalAirport` is derived from ADS-B track analysis, not filed flight plans — it is frequently `null` for flights still in progress |
+| **Route database incomplete** | The `/api/routes` endpoint (which maps callsign → route) is not populated for all flights; many callsigns return 404 |
+| **Rate limiting** | Anonymous requests are throttled. A free registered account ([sign up here](https://opensky-network.org/index.php?option=com_users&view=registration)) gives higher limits |
+| **Data source** | Community ADS-B feeders — no access to airline-filed flight plans, so origin/destination is always estimated |
+
+The app works around these limitations with two additional fallbacks:
+1. OpenFlights `routes.dat` — a static database of scheduled airline routes, used when the origin is known but destination is missing and the airline has exactly one route from that airport
+2. OpenFlights `airlines.dat` / `airports.dat` — for resolving airline names and airport city names locally
+
+### Alternative providers
+
+The provider interface makes it straightforward to swap in a different data source. Some options worth considering:
+
+| Provider | Origin/Destination | Free Tier | Notes |
+|---|---|---|---|
+| **[FlightAware AeroAPI](https://www.flightaware.com/commercial/aeroapi/)** | ✅ Filed flight plans — always accurate | Pay-per-query (~$0.01/call) | Best data quality; destination reliably available |
+| **[ADS-B Exchange](https://www.adsbexchange.com/api-lite/)** | ❌ Position only | API key via RapidAPI | Unfiltered, no rate limiting — better position data but no route improvement |
+| **[AirLabs](https://airlabs.co/docs/flights)** | ✅ Real-time routes | Free tier available | Includes live origin/destination; worth evaluating |
+| **[AviationStack](https://aviationstack.com/pricing)** | ✅ Scheduled routes | 100 req/month | Too limited for a 10-second polling loop |
+
+### Plugging in a new provider
+
+The provider interface is deliberately minimal — one method to implement:
+
+```python
+# tracker/providers/base.py
+class FlightProvider(ABC):
+    @abstractmethod
+    def fetch_flights(self, lat: float, lon: float, radius_km: float) -> list[Flight]:
+        ...
+```
+
+To add a new provider:
 
 1. Create `tracker/providers/myprovider.py` implementing `FlightProvider`:
 
@@ -137,11 +175,15 @@ _REGISTRY = {
 }
 ```
 
-3. Set `provider.name: myprovider` in `config.yaml`.
+3. Set `provider.name: myprovider` in `config.yaml` — no other changes needed.
+
+The rest of the app (display, geo, lookup) is fully provider-agnostic and will work unchanged.
+
+## Extending the app
 
 ### Adding a new display backend
 
-Same pattern — implement `tracker/display/base.py`'s `Display` interface (`show_flight`, `show_idle`, `close`), register it in `tracker/display/__init__.py`, and set `display.type` in `config.yaml`.
+Same pattern as providers — implement the `Display` interface (`show_flight`, `show_idle`, `close`), register it in `tracker/display/__init__.py`, and set `display.type` in `config.yaml`.
 
 ## Hardware
 
