@@ -107,7 +107,7 @@ class OpenSkyProvider(FlightProvider):
         if cached and time.time() - cached[2] < _ROUTE_TTL:
             return cached[0], cached[1]
 
-        # Primary: undocumented but reliable /routes endpoint (callsign → route array)
+        # Primary: /routes endpoint (callsign → route array)
         if callsign and callsign != "??????":
             result = self._routes_endpoint(callsign)
             if result != ("", ""):
@@ -119,12 +119,10 @@ class OpenSkyProvider(FlightProvider):
         if icao24:
             origin, dest = self._flights_endpoint(icao24)
 
-        # Fallback 2: OpenFlights routes.dat — only used when destination is still unknown
-        # and origin is known, and there is exactly one route for this airline+origin pair
+        # Fallback 2: OpenFlights routes.dat — only when destination still unknown
+        # and there is exactly one route for this airline+origin pair
         if origin and not dest:
             dest = get_destination_from_routes(callsign, origin)
-            if dest:
-                log.info("Route (OpenFlights fallback) %s: %s → %s", callsign, origin, dest)
 
         if origin or dest:
             _route_cache[cache_key] = (origin, dest, time.time())
@@ -138,21 +136,12 @@ class OpenSkyProvider(FlightProvider):
             resp = requests.get(
                 _ROUTES_URL, params={"callsign": callsign}, auth=self._auth, timeout=10
             )
-            log.info("Routes API %s → HTTP %s", callsign, resp.status_code)
-            if resp.status_code == 403:
-                log.warning("Routes API returned 403 for %s — check credentials", callsign)
-                return "", ""
-            if resp.status_code == 404:
-                log.info("Routes API: no route on record for %s", callsign)
+            if resp.status_code in (403, 404):
                 return "", ""
             resp.raise_for_status()
-            data = resp.json()
-            route = data.get("route") or []
-            log.info("Routes API raw response for %s: %s", callsign, data)
+            route = resp.json().get("route") or []
             if len(route) >= 2:
-                origin, dest = route[0], route[-1]
-                log.info("Route (routes API) %s: %s → %s", callsign, origin, dest)
-                return origin, dest
+                return route[0], route[-1]
         except Exception as exc:
             log.warning("Routes endpoint failed for %s: %s", callsign, exc)
         return "", ""
@@ -162,17 +151,11 @@ class OpenSkyProvider(FlightProvider):
         params = {"icao24": icao24, "begin": now - 7200, "end": now}
         try:
             resp = requests.get(_FLIGHTS_URL, params=params, auth=self._auth, timeout=10)
-            log.info("Flights API %s → HTTP %s", icao24, resp.status_code)
             resp.raise_for_status()
             flights = resp.json()
             if flights:
                 latest = max(flights, key=lambda f: f.get("lastSeen", 0))
-                origin = latest.get("estDepartureAirport") or ""
-                dest = latest.get("estArrivalAirport") or ""
-                log.info("Route (flights API) %s: origin=%r dest=%r", icao24, origin, dest)
-                return origin, dest
-            else:
-                log.info("Flights API: no flights found for %s in last 2h", icao24)
+                return latest.get("estDepartureAirport") or "", latest.get("estArrivalAirport") or ""
         except Exception as exc:
             log.warning("Flights endpoint failed for %s: %s", icao24, exc)
         return "", ""
