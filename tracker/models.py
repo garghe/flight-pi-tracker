@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -11,3 +11,6 @@ class Flight:
     heading: int        # degrees 0-360
     distance_km: float
     vertical_rate: int  # ft/min, positive = climbing
+    airline: str = ""
+    origin_airport: str = ""
+    destination_airport: str = ""

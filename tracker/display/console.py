@@ -16,13 +16,20 @@ class ConsoleDisplay(Display):
     def show_flight(self, flight: Flight) -> None:
         vdir = "↑" if flight.vertical_rate >= 0 else "↓"
         ts = datetime.now().strftime("%H:%M:%S")
+
+        airline = f" ({flight.airline})" if flight.airline else ""
+        route = ""
+        if flight.origin_airport or flight.destination_airport:
+            origin = flight.origin_airport or "?"
+            dest = flight.destination_airport or "?"
+            route = f"  {origin} → {dest}"
+
         print(
-            f"[{ts}] ✈  {flight.callsign:<8} "
-            f"ALT {flight.altitude_ft:>6}ft  "
+            f"[{ts}] ✈  {flight.callsign:<8}{airline}{route}\n"
+            f"         ALT {flight.altitude_ft:>6}ft {vdir}{abs(flight.vertical_rate)}fpm  "
             f"SPD {flight.speed_knots:>3}kt  "
             f"HDG {flight.heading:>3}°  "
-            f"DIST {flight.distance_km:.2f}km  "
-            f"{vdir}{abs(flight.vertical_rate)}fpm"
+            f"DIST {flight.distance_km:.2f}km"
         )
 
     def show_idle(self) -> None:

@@ -7,12 +7,10 @@ from tracker.models import Flight
 
 log = logging.getLogger(__name__)
 
-# Colour palette
 _WHITE = (255, 255, 255)
 _YELLOW = (255, 215, 0)
 _CYAN = (0, 200, 255)
 _GREEN = (0, 220, 100)
-_RED = (255, 80, 80)
 _DIM = (80, 80, 80)
 
 
@@ -56,7 +54,6 @@ class Hub75Display(Display):
         try:
             from PIL import ImageFont  # type: ignore[import]
 
-            # Try to load a small bitmap font; fall back to default if unavailable
             for path in (
                 "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
                 "/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf",
@@ -87,12 +84,28 @@ class Hub75Display(Display):
 
     def show_flight(self, flight: Flight) -> None:
         vdir = "^" if flight.vertical_rate >= 0 else "v"
-        lines = [
-            (flight.callsign[:8].center(10), _YELLOW),
-            (f"ALT {flight.altitude_ft}ft {vdir}", _CYAN),
-            (f"SPD {flight.speed_knots}kt {flight.distance_km:.1f}km", _GREEN),
-        ]
-        self._render(lines)
+
+        # Line 1: callsign + airline (truncated to fit 64px)
+        label = flight.callsign
+        if flight.airline:
+            label = f"{flight.callsign} {flight.airline[:12]}"
+
+        # Line 2: route (origin → destination), or blank if unknown
+        if flight.origin_airport or flight.destination_airport:
+            origin = (flight.origin_airport or "?")[:10]
+            dest = (flight.destination_airport or "?")[:10]
+            route_line = f"{origin}->{dest}"
+        else:
+            route_line = "Route unknown"
+
+        # Line 3: altitude + vertical trend + distance
+        alt_line = f"ALT {flight.altitude_ft}ft {vdir} {flight.distance_km:.1f}km"
+
+        self._render([
+            (label[:21], _YELLOW),
+            (route_line[:21], _CYAN),
+            (alt_line[:21], _GREEN),
+        ])
 
     def show_idle(self) -> None:
         self._render([
