@@ -1,0 +1,20 @@
+location:
+  lat: null   # Set your latitude here (e.g. 51.5074)
+  lon: null   # Set your longitude here (e.g. -0.1278)
+
+threshold:
+  radius_km: 1.6   # ~1 mile — only show flights within this radius
+
+provider:
+  name: opensky
+  username: ""   # Optional: register at opensky-network.org for higher rate limits
+  password: ""
+
+refresh_interval_sec: 10
+
+display:
+  type: hub75          # hub75 | console
+  width: 64
+  height: 32
+  brightness: 60       # 0-100
+  gpio_slowdown: 2     # Increase to 3-4 on Pi 4, reduce to 1 on older Pi models

@@ -1,0 +1,4 @@
+requests
+PyYAML
+Pillow
+rpi-rgb-led-matrix
