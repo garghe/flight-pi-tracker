@@ -44,6 +44,10 @@ def _vrate_ms_to_fpm(ms: float | None) -> int:
 class OpenSkyProvider(FlightProvider):
     def __init__(self, username: str = "", password: str = "") -> None:
         self._auth = (username, password) if username else None
+        if self._auth:
+            log.info("OpenSky: using authenticated requests (user=%s)", username)
+        else:
+            log.warning("OpenSky: no credentials set — route lookups will likely fail")
 
     def fetch_flights(self, lat: float, lon: float, radius_km: float) -> list[Flight]:
         lat_min, lon_min, lat_max, lon_max = bounding_box(lat, lon, radius_km)
@@ -125,18 +129,23 @@ class OpenSkyProvider(FlightProvider):
             resp = requests.get(
                 _ROUTES_URL, params={"callsign": callsign}, auth=self._auth, timeout=10
             )
-            if resp.status_code in (403, 404):
-                # 403 = credentials required; 404 = no route on record
+            log.info("Routes API %s → HTTP %s", callsign, resp.status_code)
+            if resp.status_code == 403:
+                log.warning("Routes API returned 403 for %s — check credentials", callsign)
+                return "", ""
+            if resp.status_code == 404:
+                log.info("Routes API: no route on record for %s", callsign)
                 return "", ""
             resp.raise_for_status()
             data = resp.json()
             route = data.get("route") or []
+            log.info("Routes API raw response for %s: %s", callsign, data)
             if len(route) >= 2:
                 origin, dest = route[0], route[-1]
-                log.debug("Route (routes API) %s: %s → %s", callsign, origin, dest)
+                log.info("Route (routes API) %s: %s → %s", callsign, origin, dest)
                 return origin, dest
         except Exception as exc:
-            log.debug("Routes endpoint failed for %s: %s", callsign, exc)
+            log.warning("Routes endpoint failed for %s: %s", callsign, exc)
         return "", ""
 
     def _flights_endpoint(self, icao24: str) -> tuple[str, str]:
@@ -144,14 +153,17 @@ class OpenSkyProvider(FlightProvider):
         params = {"icao24": icao24, "begin": now - 7200, "end": now}
         try:
             resp = requests.get(_FLIGHTS_URL, params=params, auth=self._auth, timeout=10)
+            log.info("Flights API %s → HTTP %s", icao24, resp.status_code)
             resp.raise_for_status()
             flights = resp.json()
             if flights:
                 latest = max(flights, key=lambda f: f.get("lastSeen", 0))
                 origin = latest.get("estDepartureAirport") or ""
                 dest = latest.get("estArrivalAirport") or ""
-                log.debug("Route (flights API) %s: %s → %s", icao24, origin, dest)
+                log.info("Route (flights API) %s: origin=%r dest=%r", icao24, origin, dest)
                 return origin, dest
+            else:
+                log.info("Flights API: no flights found for %s in last 2h", icao24)
         except Exception as exc:
-            log.debug("Flights endpoint failed for %s: %s", icao24, exc)
+            log.warning("Flights endpoint failed for %s: %s", icao24, exc)
         return "", ""
