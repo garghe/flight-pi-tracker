@@ -18,11 +18,9 @@ class ConsoleDisplay(Display):
         ts = datetime.now().strftime("%H:%M:%S")
 
         airline = f" ({flight.airline})" if flight.airline else ""
-        route = ""
-        if flight.origin_airport or flight.destination_airport:
-            origin = flight.origin_airport or "unknown"
-            dest = flight.destination_airport or "en route"
-            route = f"  {origin} → {dest}"
+        origin = flight.origin_airport or "unknown"
+        dest = flight.destination_airport or "unknown"
+        route = f"  {origin} → {dest}"
 
         print(
             f"[{ts}] ✈  {flight.callsign:<8}{airline}{route}\n"
