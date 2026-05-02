@@ -11,6 +11,7 @@ from tracker.providers.base import FlightProvider
 log = logging.getLogger(__name__)
 
 _STATES_URL = "https://opensky-network.org/api/states/all"
+_ROUTES_URL = "https://opensky-network.org/api/routes"
 _FLIGHTS_URL = "https://opensky-network.org/api/flights/aircraft"
 
 # OpenSky state-vector field indices
@@ -23,7 +24,7 @@ _IDX_SPEED_MS = 9    # ground speed m/s
 _IDX_HEADING = 10    # true track degrees
 _IDX_VRATE_MS = 11   # vertical rate m/s
 
-# Route cache: icao24 → (origin_icao, dest_icao, fetched_at)
+# Route cache: callsign → (origin_icao, dest_icao, fetched_at)
 _route_cache: dict[str, tuple[str, str, float]] = {}
 _ROUTE_TTL = 1800  # seconds — routes don't change mid-flight
 
@@ -72,7 +73,7 @@ class OpenSkyProvider(FlightProvider):
             callsign = (sv[_IDX_CALLSIGN] or "").strip() or "??????"
             distance_km = haversine_km(lat, lon, flight_lat, flight_lon)
 
-            origin, destination = self._get_route(icao24)
+            origin, destination = self._get_route(callsign, icao24)
 
             flights.append(
                 Flight(
@@ -92,15 +93,53 @@ class OpenSkyProvider(FlightProvider):
 
         return flights
 
-    def _get_route(self, icao24: str) -> tuple[str, str]:
-        """Return (origin_icao, destination_icao) for an aircraft, with caching."""
-        if not icao24:
+    def _get_route(self, callsign: str, icao24: str) -> tuple[str, str]:
+        """Return (origin_icao, destination_icao), trying /routes first then /flights."""
+        cache_key = callsign or icao24
+        if not cache_key:
             return "", ""
 
-        cached = _route_cache.get(icao24)
+        cached = _route_cache.get(cache_key)
         if cached and time.time() - cached[2] < _ROUTE_TTL:
             return cached[0], cached[1]
 
+        # Primary: undocumented but reliable /routes endpoint (callsign → route array)
+        if callsign and callsign != "??????":
+            result = self._routes_endpoint(callsign)
+            if result != ("", ""):
+                _route_cache[cache_key] = (*result, time.time())
+                return result
+
+        # Fallback: /flights/aircraft with a 2-hour look-back window
+        if icao24:
+            result = self._flights_endpoint(icao24)
+            if result != ("", ""):
+                _route_cache[cache_key] = (*result, time.time())
+                return result
+
+        _route_cache[cache_key] = ("", "", time.time())
+        return "", ""
+
+    def _routes_endpoint(self, callsign: str) -> tuple[str, str]:
+        try:
+            resp = requests.get(
+                _ROUTES_URL, params={"callsign": callsign}, auth=self._auth, timeout=10
+            )
+            if resp.status_code in (403, 404):
+                # 403 = credentials required; 404 = no route on record
+                return "", ""
+            resp.raise_for_status()
+            data = resp.json()
+            route = data.get("route") or []
+            if len(route) >= 2:
+                origin, dest = route[0], route[-1]
+                log.debug("Route (routes API) %s: %s → %s", callsign, origin, dest)
+                return origin, dest
+        except Exception as exc:
+            log.debug("Routes endpoint failed for %s: %s", callsign, exc)
+        return "", ""
+
+    def _flights_endpoint(self, icao24: str) -> tuple[str, str]:
         now = int(time.time())
         params = {"icao24": icao24, "begin": now - 7200, "end": now}
         try:
@@ -108,15 +147,11 @@ class OpenSkyProvider(FlightProvider):
             resp.raise_for_status()
             flights = resp.json()
             if flights:
-                # Most recent entry first
                 latest = max(flights, key=lambda f: f.get("lastSeen", 0))
                 origin = latest.get("estDepartureAirport") or ""
                 dest = latest.get("estArrivalAirport") or ""
-                log.debug("Route for %s: origin=%r dest=%r", icao24, origin, dest)
-                _route_cache[icao24] = (origin, dest, time.time())
+                log.debug("Route (flights API) %s: %s → %s", icao24, origin, dest)
                 return origin, dest
         except Exception as exc:
-            log.debug("Route lookup failed for %s: %s", icao24, exc)
-
-        _route_cache[icao24] = ("", "", time.time())
+            log.debug("Flights endpoint failed for %s: %s", icao24, exc)
         return "", ""
