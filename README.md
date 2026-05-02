@@ -22,6 +22,8 @@ tracker/
 ├── config.py                   # YAML loader + startup validation
 ├── models.py                   # Flight dataclass (single shared data model)
 ├── geo.py                      # Haversine distance + bounding box (no extra deps)
+├── lookup.py                   # Airline + airport name lookups (OpenFlights data)
+├── data/                       # Downloaded at runtime — airlines.dat, airports.dat
 ├── providers/
 │   ├── base.py                 # Abstract FlightProvider interface
 │   ├── opensky.py              # OpenSky Network REST implementation
@@ -39,7 +41,11 @@ Both **providers** and **displays** are pluggable. The active backend is selecte
 
 ```
 FlightProvider.fetch_flights(lat, lon, radius_km)
-    └─▶ returns [Flight, ...]          # all aircraft in bounding box
+    └─▶ OpenSky /states/all          # live position, speed, altitude
+    └─▶ OpenSky /flights/aircraft    # route lookup per aircraft (cached 30 min)
+    └─▶ lookup.get_airline_name()    # ICAO prefix → airline name
+    └─▶ lookup.get_airport_city()    # ICAO code → city name
+    └─▶ returns [Flight, ...]
             └─▶ closest = min(distance_km)
                     └─▶ Display.show_flight(closest)
                          or Display.show_idle()
@@ -55,19 +61,35 @@ class Flight:
     lon: float
     altitude_ft: int
     speed_knots: int
-    heading: int        # degrees 0–360
+    heading: int              # degrees 0–360
     distance_km: float
-    vertical_rate: int  # ft/min, positive = climbing
+    vertical_rate: int        # ft/min, positive = climbing
+    airline: str              # e.g. "British Airways" — from OpenFlights data
+    origin_airport: str       # e.g. "London" — from OpenSky route + OpenFlights lookup
+    destination_airport: str  # e.g. "New York"
 ```
+
+Airline names are resolved by matching the 3-letter ICAO prefix of the callsign (e.g. `BAW` → British Airways) against the [OpenFlights airlines database](https://openflights.org/data), which is downloaded automatically on first run.
+
+Departure and destination airports are fetched from the [OpenSky `/flights/aircraft` endpoint](https://openskynetwork.github.io/opensky-api/rest.html) using a 2-hour look-back window, then mapped to city names via the OpenFlights airports database. Results are cached per aircraft for 30 minutes to stay within rate limits.
+
+> **Tip:** Register a free account at [opensky-network.org](https://opensky-network.org) and set `provider.username` / `provider.password` in `config.yaml` for higher rate limits and more reliable route data.
 
 ### Display layout (64×32 HUB75)
 
 ```
 ┌────────────────────────────────┐
-│          BAW123                │  ← callsign, yellow
-│  ALT 3500ft ^                  │  ← altitude + climb/descend indicator, cyan
-│  SPD 210kt  0.4km              │  ← speed + distance from home, green
+│  BAW123 British Airways        │  ← callsign + airline, yellow
+│  London->New York              │  ← origin → destination, cyan
+│  ALT 3500ft v 0.4km            │  ← altitude + climb/descend + distance, green
 └────────────────────────────────┘
+```
+
+Console output example:
+
+```
+[14:43:13] ✈  BAW123   (British Airways)  London → New York
+             ALT   3500ft ↓800fpm  SPD 210kt  HDG 275°  DIST 0.40km
 ```
 
 ## Configuration reference
