@@ -4,7 +4,7 @@ import time
 import requests
 
 from tracker.geo import bounding_box, haversine_km
-from tracker.lookup import get_airline_name, get_airport_city
+from tracker.lookup import get_airline_name, get_airport_city, get_destination_from_routes
 from tracker.models import Flight
 from tracker.providers.base import FlightProvider
 
@@ -114,12 +114,21 @@ class OpenSkyProvider(FlightProvider):
                 _route_cache[cache_key] = (*result, time.time())
                 return result
 
-        # Fallback: /flights/aircraft with a 2-hour look-back window
+        # Fallback 1: /flights/aircraft with a 2-hour look-back window
+        origin, dest = "", ""
         if icao24:
-            result = self._flights_endpoint(icao24)
-            if result != ("", ""):
-                _route_cache[cache_key] = (*result, time.time())
-                return result
+            origin, dest = self._flights_endpoint(icao24)
+
+        # Fallback 2: OpenFlights routes.dat — only used when destination is still unknown
+        # and origin is known, and there is exactly one route for this airline+origin pair
+        if origin and not dest:
+            dest = get_destination_from_routes(callsign, origin)
+            if dest:
+                log.info("Route (OpenFlights fallback) %s: %s → %s", callsign, origin, dest)
+
+        if origin or dest:
+            _route_cache[cache_key] = (origin, dest, time.time())
+            return origin, dest
 
         _route_cache[cache_key] = ("", "", time.time())
         return "", ""
