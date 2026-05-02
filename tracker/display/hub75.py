@@ -92,8 +92,8 @@ class Hub75Display(Display):
 
         # Line 2: route (origin → destination), or blank if unknown
         if flight.origin_airport or flight.destination_airport:
-            origin = (flight.origin_airport or "?")[:10]
-            dest = (flight.destination_airport or "?")[:10]
+            origin = (flight.origin_airport or "unknown")[:10]
+            dest = (flight.destination_airport or "en route")[:10]
             route_line = f"{origin}->{dest}"
         else:
             route_line = "Route unknown"

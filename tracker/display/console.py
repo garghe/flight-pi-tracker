@@ -20,8 +20,8 @@ class ConsoleDisplay(Display):
         airline = f" ({flight.airline})" if flight.airline else ""
         route = ""
         if flight.origin_airport or flight.destination_airport:
-            origin = flight.origin_airport or "?"
-            dest = flight.destination_airport or "?"
+            origin = flight.origin_airport or "unknown"
+            dest = flight.destination_airport or "en route"
             route = f"  {origin} → {dest}"
 
         print(

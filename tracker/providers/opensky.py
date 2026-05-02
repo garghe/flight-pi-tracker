@@ -112,6 +112,7 @@ class OpenSkyProvider(FlightProvider):
                 latest = max(flights, key=lambda f: f.get("lastSeen", 0))
                 origin = latest.get("estDepartureAirport") or ""
                 dest = latest.get("estArrivalAirport") or ""
+                log.debug("Route for %s: origin=%r dest=%r", icao24, origin, dest)
                 _route_cache[icao24] = (origin, dest, time.time())
                 return origin, dest
         except Exception as exc:
